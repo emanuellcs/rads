@@ -1,0 +1,48 @@
+name: Advanced System QA (Pylint)
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Enforcing Python 3.12
+        python-version: ["3.12"]
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5  # Upgraded to v5 for advanced caching
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'  # Caches dependencies to drastically speed up CI runs
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # Install the system requirements so Pylint can resolve internal imports
+        # We use --prefer-binary to avoid building complex C-extensions on the CPU runner
+        pip install -r requirements.txt --prefer-binary
+        # Install Pylint
+        pip install pylint
+
+    - name: Analysing the code with Pylint
+      run: |
+        # Advanced QA Execution:
+        # 1. Target the specific RADS architecture directories.
+        # 2. --fail-under=8.5: Fails the GitHub Action if code quality drops below 8.5/10.
+        # 3. --max-line-length=120: Accommodates complex PyTorch tensor operations.
+        # 4. --disable=E0401: Ignores missing import errors. This is CRITICAL because 
+        #    GPU-bound libraries (unsloth, bitsandbytes) will fail to import on a CPU runner.
+        
+        pylint --fail-under=8.5 \
+               --max-line-length=120 \
+               --disable=E0401 \
+               data/ models/ agent/ orchestrator/ scripts/
