@@ -63,7 +63,7 @@ ARC Prize 2026 runs three simultaneous tracks, each measuring a different facet 
 
 ## What is RADS?
 
-**RADS (Recursive Active-Diffusion Synthesis)** is a unified neuro-symbolic system designed to compete across all three tracks with a single set of core weights. Its central thesis is this: static grid prediction and interactive game navigation are not different problems requiring different models: they are two surface presentations of the same underlying computational task. In both cases, the agent must observe a small amount of evidence, induce a hidden rule governing the environment, and execute that rule precisely. RADS is built around that unified abstraction.
+**RADS (Recursive Active-Diffusion Synthesis)** is a unified neuro-symbolic system designed to compete across all three tracks with a single set of core weights. Its central thesis is this: static grid prediction and interactive game navigation are not different problems requiring different models; they are two surface presentations of the same underlying computational task. In both cases, the agent must observe a small amount of evidence, induce a hidden rule governing the environment, and execute that rule precisely. RADS is built around that unified abstraction.
 
 The system has two primary components that work in concert.
 
@@ -102,8 +102,6 @@ Because the TRM is compiled to a CUDA Graph via `torch.compile`, each 32-step ve
 ### Step 4 - Submission
 
 The two accepted candidates are written to `submission.json`. The entire process (TTT, diffusion, verification, submission) takes approximately 46 seconds per task, allowing 240 tasks to complete in roughly 3.1 hours, well within the 12-hour limit and with nearly 9 hours of headroom remaining for harder tasks that benefit from more TTT steps.
-
----
 
 ## Architecture
 
