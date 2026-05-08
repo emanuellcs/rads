@@ -236,11 +236,10 @@ python scripts/run_arc_agi_3_agent.py
 ## Citation
 
 ```bibtex
-@misc{rads2026,
-  title        = {RADS: Recursive Active-Diffusion Synthesis for Unified Abstract Reasoning},
-  author       = {Emanuel Lázaro},
-  year         = {2026},
-  howpublished = {\url{https://github.com/emanuellcs/rads}},
-  note         = {ARC Prize 2026 Competition Entry}
+@software{Silva_RADS_Recursive_Active-Diffusion,
+    author = {Silva, Emanuel Lázaro Custódio},
+    license = {Apache-2.0},
+    title = {{RADS: Recursive Active-Diffusion Synthesis for Unified Abstract Reasoning}},
+    url = {https://github.com/emanuellcs/rads}
 }
 ```
