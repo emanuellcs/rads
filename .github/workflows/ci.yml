@@ -1,0 +1,103 @@
+name: RADS CI
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    branches: ["main", "dev"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  quality:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --prefer-binary -r requirements.txt
+
+      - name: Ruff lint
+        run: |
+          python -m ruff check core models data agent orchestrator scripts tests
+
+      - name: Ruff format check
+        run: |
+          python -m ruff format --check core models data agent orchestrator scripts tests
+
+      - name: Mypy type check
+        run: |
+          python -m mypy core models data agent orchestrator scripts \
+            --python-version 3.12 \
+            --ignore-missing-imports \
+            --follow-imports=silent \
+            --explicit-package-bases
+
+      - name: Pylint quality gate
+        run: |
+          python -m pylint \
+            --fail-under=8.5 \
+            --max-line-length=120 \
+            --disable=E0401 \
+            core data models agent orchestrator scripts
+
+  tests:
+    name: CPU Offline Tests
+    runs-on: ubuntu-latest
+    needs: quality
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --prefer-binary -r requirements.txt
+
+      - name: Run CPU tests under offline emulation
+        env:
+          HF_DATASETS_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+          WANDB_MODE: offline
+          RADS_USE_TINY_BACKBONE: "1"
+        run: |
+          python -m pytest -m "not cuda" tests \
+            --cov=core \
+            --cov=orchestrator \
+            --cov=models \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=75
+
