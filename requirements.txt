@@ -8,6 +8,13 @@ torch          # The backbone framework; handles dynamic graphs, SDPA dispatcher
 torchvision    # Used for CPU-bound geometric grid augmentations (rotations, transpositions)
 numpy          # Essential for grid array manipulation and multi-process memory mapping
 
+# --- CI / Quality Gates ---
+pytest         # Test runner for the RADS unit and integration suite
+pytest-cov     # Coverage enforcement for critical runtime paths
+ruff           # Fast linting and formatting checks
+pylint         # Higher-level static analysis and quality scoring
+mypy           # Type checking for tensor and IPC interfaces
+
 # --- Generative Prior & Quantization ---
 transformers   # Hugging Face ecosystem for loading the base 8B Masked Diffusion model
 peft           # Parameter-Efficient Fine-Tuning; used for hot-swapping Rank-32 LoRA adapters

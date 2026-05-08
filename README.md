@@ -235,7 +235,15 @@ more attention FLOPs than necessary. On a T4, where HBM bandwidth is the primary
 RADS abandons `<PAD>` tokens entirely, using PyTorch's `NestedTensor` API to concatenate variable-length sequences into a single contiguous token buffer. Sequence boundaries are tracked using **cumulative sequence length arrays** (`cu_seq_lens`) that indicate where each sequence begins and ends in the flat buffer. The xFormers memory-efficient attention kernel (`sdpa_mem_eff`) consumes this representation natively, computing attention only over valid within-sequence token pairs and skipping all cross-sequence interactions:
 
 ```python
-# Work in Progress (WIP)
+pack = GridSequencePacker.pack_grids(batch_grids, device=device)
+q, k, v = qkv_projection(pack["packed_sequence"]).chunk(3, dim=-1)
+attn = execute_packed_attention(
+    q.view(-1, num_heads, head_dim),
+    k.view(-1, num_heads, head_dim),
+    v.view(-1, num_heads, head_dim),
+    pack["cu_seq_lens"],
+    pack["max_seq_len"],
+)
 ```
 
 Measured throughput improvement over padded batching on a T4: **3×–8×** depending on the distribution of grid sizes in the batch. This translates directly into more diffusion denoising steps and more TRM verifications within the fixed runtime budget.
@@ -245,7 +253,10 @@ Measured throughput improvement over padded batching on a T4: **3×–8×** depe
 The TRM verification loop must sustain high throughput because MCTS can request tens of thousands of evaluations per ARC-AGI-3 game, and even ARC-AGI-2 benefits from screening hundreds of diffusion candidates per task. Without compilation, each Python-side `forward()` call incurs approximately 0.25ms of kernel dispatch overhead; multiplied across 32 recursive iterations, that is roughly 8ms of pure overhead per verification that produces no compute. Wrapping the TRM in `torch.compile(mode="reduce-overhead")` captures the entire 32-step recursive loop as a **CUDA Graph** after a brief warm-up period:
 
 ```python
-# Work in Progress (WIP)
+trm = get_compiled_trm(device="cuda:0")
+static_batch = torch.zeros((64, 512), device="cuda:0")
+trace = trm(static_batch)  # always the same shape for CUDA Graph replay
+accepted = trace.converged & torch.isfinite(trace.final_delta) & (trace.final_delta < 0.01)
 ```
 
 The result is a reduction from ~8ms per verification to ~0.3ms, a **27× throughput improvement**, enabling the system to screen approximately 300 candidates per second on a single T4, and sustain ~1,200 tree-node evaluations per second on a dual-T4 MCTS configuration.
@@ -263,13 +274,21 @@ RADS eliminates the leak at its root with three structural guarantees applied si
 **Worker-seeded RNGs via `worker_init_fn`.** The `worker_init_fn` hook runs inside the worker process immediately after the fork, before any training iteration begins. It initializes the worker's RNG from scratch using only local state, so no RNG object with a modifiable internal state ever exists in the parent process's address space to be CoW-copied:
 
 ```python
-# Work in Progress (WIP)
+def worker_init_fn(worker_id: int):
+    base_seed = torch.initial_seed() % (2**31)
+    worker_seed = base_seed + worker_id * 31337
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
 ```
 
 **Augmentations inside `__getitem__`.** All data augmentations (grid rotations, color permutations, reflections) are applied inside `__getitem__`, which executes entirely within the worker's local address space. Augmented tensors are freshly allocated in the worker's heap and never exist in the parent process, so they cannot trigger CoW copies:
 
 ```python
-# Work in Progress (WIP)
+def __getitem__(self, idx: int):
+    input_grid, output_grid = self.registry[concept]()
+    input_grid, output_grid = apply_paired_color_permutation(input_grid, output_grid)
+    input_grid, output_grid = apply_random_symmetry_group(input_grid, output_grid)
+    return {"input_grid": torch.tensor(input_grid.copy()), "output_grid": torch.tensor(output_grid.copy())}
 ```
 
 The combined effect is that system RAM consumption remains under 3 GB throughout training, compared to 18+ GB for a naive padded-batch pipeline with shared state.
@@ -415,13 +434,16 @@ Key dependencies: `torch>=2.3.0`, `bitsandbytes>=0.43.0`, `xformers`, `unsloth`,
 ### ARC-AGI-2 (Static Prediction, 12-hour budget)
 
 ```bash
-# Work in Progress (WIP)
+export RADS_BASE_MODEL_DIR=/kaggle/input/rads-base-model
+export TRANSFORMERS_OFFLINE=1
+python scripts/run_arc_agi_2_ttt.py
 ```
 
 ### ARC-AGI-3 (Interactive Agency, 6-hour budget)
 
 ```bash
-# Work in Progress (WIP)
+export TRANSFORMERS_OFFLINE=1
+python scripts/run_arc_agi_3_agent.py
 ```
 
 ## Competition Targets and Runtime Budget
