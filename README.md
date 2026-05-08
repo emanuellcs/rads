@@ -22,9 +22,74 @@ The **Abstraction and Reasoning Corpus (ARC)**, proposed by François Chollet in
 
 **RADS (Recursive Active-Diffusion Synthesis)** is a unified neuro-symbolic system designed to bridge this reasoning gap. Its central thesis, the **Universality Thesis**, posits that static grid prediction and interactive game navigation are surface presentations of the same underlying computational task: the induction and execution of a hidden environmental rule. RADS implements this via a dual-engine architecture: an 8-billion parameter **Masked Diffusion Language Model (The Dreamer)** for global hypothesis generation, and a 7-million parameter **Tiny Recursive Model (The Verifier)** for mathematical consistency testing. Operating within the strict hardware constraints of a single NVIDIA T4 Kaggle notebook, RADS utilizes continuous token algebra and Banach contraction mappings to achieve robust, offline-ready abstract reasoning.
 
+```mermaid
+graph TD
+    subgraph "RADS Macro-Architecture"
+        direction TB
+        Task[ARC Task]
+        TTT[Test-Time Training <br/> QLoRA Task Adaptation]
+        
+        subgraph "Dual-Engine Inference Loop"
+            direction TB
+            Dreamer[The Dreamer <br/> 8B MDLM]
+            Hypotheses[Latent Hypotheses]
+            Verifier[The Verifier <br/> 7M TRM]
+            
+            Dreamer --> Hypotheses
+            Hypotheses --> Verifier
+            Verifier -. Feedback .-> Dreamer
+        end
+        
+        Validated[Validated Predictions]
+        Submission[Final Submission]
+
+        Task --> TTT
+        TTT --> Dreamer
+        Verifier --> Validated
+        Validated --> Submission
+    end
+
+    style Task fill:#f9f,stroke:#333,stroke-width:2px
+    style Submission fill:#ccf,stroke:#333,stroke-width:2px
+    style Dreamer fill:#bbf,stroke:#333,stroke-width:2px
+    style Verifier fill:#bfb,stroke:#333,stroke-width:2px
+```
+
 ## The Neural Core (Dreamer & Verifier)
 
 The architectural foundation of RADS is a decoupled generative-verificative loop. This separation of concerns ensures that the generative model (The Dreamer) can focus on exploring the massive hypothesis space of latent transformation rules, while the discriminative model (The Verifier) applies a rigorous mathematical filter to ensure logical consistency.
+
+```mermaid
+sequenceDiagram
+    participant D as The Dreamer (MDLM)
+    participant S as Soft Distribution Buffer
+    participant V as The Verifier (TRM)
+    
+    Note over D,V: Recursive Active-Diffusion Synthesis Loop
+    
+    D->>S: 1. Initialize with [MASK] tokens
+    Loop Denoising Step t=1..T
+        S->>D: Current Soft Grid p(x_t)
+        D->>D: Continuous Token Algebra (Projection)
+        D->>D: Bidirectional Attention
+        D->>S: Refined Soft Grid p(x_t-1)
+    end
+    
+    S->>V: 2. Submit Argmax Hypothesis (h)
+    
+    Loop Recursion k=1..K
+        V->>V: Banach Contraction f(z_k, h)
+        Note right of V: Latent z_k+1 = z_k + MLP(z_k)
+    end
+    
+    V->>V: 3. Check ||z_K - z_K-1|| < ε
+    
+    alt Consistent (Converged)
+        V-->>D: ACCEPT (Submit Result)
+    else Inconsistent (Divergent)
+        V-->>D: REJECT (Resample with Feedback)
+    end
+```
 
 ### 1. The Masked Diffusion Prior (MDLM)
 
@@ -76,6 +141,36 @@ Because the TRM is captured as a **CUDA Graph**, it can screen over 300 candidat
 
 Deploying an 8-billion parameter diffusion model and an asynchronous swarm of MCTS workers within the strict 15 GB VRAM and 30 GB RAM limit of a Kaggle notebook requires aggressive, low-level systems engineering.
 
+```mermaid
+graph TD
+    subgraph "Engineering Optimizations"
+        subgraph "Memory-Efficient Attention"
+            NP[Naive Padding] --- Pack[Sequence Packing]
+            Pack --> NT[NestedTensors]
+            NT --> Flash[xFormers / SDPA]
+        end
+        
+        subgraph "Spatial Awareness"
+            RoPE1D[1D RoPE] --- RoPE2D[Fused 2D RoPE]
+            RoPE2D --> Axial[Axial Factorization]
+            Axial --> Euclidean[Euclidean Distance Decay]
+        end
+        
+        subgraph "Memory Stability"
+            Fork[Naive Fork] --- CoW[Copy-on-Write Prevention]
+            CoW --> Pure[Stateless Pure Functions]
+            CoW --> Init[Worker-Init Seeding]
+        end
+    end
+
+    style NP fill:#fbb,stroke:#333
+    style Fork fill:#fbb,stroke:#333
+    style RoPE1D fill:#fbb,stroke:#333
+    style NT fill:#bfb,stroke:#333
+    style Axial fill:#bfb,stroke:#333
+    style Pure fill:#bfb,stroke:#333
+```
+
 ### 1. Sequence Packing & NestedTensors
 
 Standard attention implementations scale quadratically with the maximum sequence length in a batch. Padding a $`3 \times 3`$ ARC grid (9 tokens) to the $`64 \times 64`$ maximum (4,096 tokens) results in a $`207{,}000\times`$ waste of attention FLOPs. On a single NVIDIA T4, this overhead makes the 12-hour competition budget effectively unreachable.
@@ -121,6 +216,35 @@ The result is a stable system RAM footprint of **< 3 GB**, compared to 18+ GB fo
 
 The computational demands of Monte Carlo Tree Search (MCTS) require sustained high-throughput neural evaluations. In a single-process Python environment, PyTorch's GPU calls are serialized by the Global Interpreter Lock (GIL), limiting effective throughput and leaving GPU Tensor Cores idle between dispatches. RADS bypasses the GIL entirely using a custom **Asynchronous Swarm Orchestrator**.
 
+```mermaid
+sequenceDiagram
+    participant W as Swarm Worker (CPU)
+    participant SHM as POSIX Shared Memory
+    participant Q as Request Queue
+    participant G as GPU Batch Server
+    participant GPU as NVIDIA T4 (CUDA)
+    
+    Note over W,GPU: Zero-Copy IPC & Dynamic Batching
+    
+    W->>W: 1. Serialize Game State
+    W->>SHM: 2. Zero-Copy Write (Direct RAM)
+    W->>Q: 3. Push Slot_ID (worker_id, slot_id)
+    W->>W: 4. Sleep (Yield CPU)
+    
+    Loop Every 10ms or Batch=64
+        G->>Q: 5. Pop Batch of Slot_IDs
+        G->>SHM: 6. Read Batch (Pinned Memory)
+        G->>GPU: 7. Asynchronous H2D Transfer
+        G->>GPU: 8. CUDA Graph Replay (TRM)
+        GPU-->>G: 9. Stability Scores
+        G->>SHM: 10. Write Results to SHM
+        G->>W: 11. Wake up (Ping Worker Queue)
+    end
+    
+    W->>SHM: 12. Read Score from SHM
+    W->>W: 13. Update MCTS Tree
+```
+
 ### 1. The GPU Batch Server (GIL-Bypass)
 
 RADS isolates all neural inference into a dedicated **GPU Batch Server** process. This server maintains a static execution pipeline that executes a single batched forward pass of the compiled TRM verifier. By using `torch.compile(mode="reduce-overhead")`, the entire 32-step recursive verification loop is captured as a **CUDA Graph**, reducing per-candidate verification time from ~8ms to **0.3ms**.
@@ -150,6 +274,33 @@ This architecture allows the GPU to stay at 100% utilization while multiple CPU 
 ## Interactive Agency (ARC-AGI-3 Strategy)
 
 ARC-AGI-3 evaluates agents via the **Relative Human Action Efficiency (RHAE)** metric. This metric applies a quadratic penalty to physical actions: an agent taking twice as many actions as a human earns 25%, not 50%. Crucially, the metric ignores internal computation time. RADS exploits this asymmetry through its **Decoupled Thinking Loop**.
+
+```mermaid
+stateDiagram-v2
+    [*] --> MVP_Probe: Task Start
+    
+    state "Thinking Phase (Zero Action Cost)" as Thinking {
+        MVP_Probe --> Epistemic_Foraging: Ground Coordinates
+        Epistemic_Foraging --> Model_Diffusion: Sample World Model
+        Model_Diffusion --> TRM_Verification: Check Consistency
+        TRM_Verification --> MCTS_Expansion: Update Tree
+        MCTS_Expansion --> HPC_Check: Evaluate Consensus
+        HPC_Check --> Epistemic_Foraging: [No Consensus] <br/> Maximize EIG
+    }
+    
+    HPC_Check --> Pragmatic_Execution: [HPC Met] <br/> Consensus Reached
+    
+    state "Execution Phase" as Execution {
+        Pragmatic_Execution --> Physical_Action: Playback Sequence
+        Physical_Action --> RESET_Exploit: [Hazard Detected]
+        RESET_Exploit --> Epistemic_Foraging: Map & Restart
+    }
+    
+    Physical_Action --> Submission: Goal Reached
+    Submission --> [*]
+
+    note right of HPC_Check: HPC = Entropy Collapse + Attractor Consensus
+```
 
 ### 1. Epistemic Foraging vs. Pragmatic Execution
 
