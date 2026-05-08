@@ -2,8 +2,8 @@
 
 # RADS: Recursive Active-Diffusion Synthesis
 
-**Emanuel Lázaro Custódio Silva**
-*Independent Researcher*
+**Emanuel Lázaro Custódio Silva**<br>
+*Independent Researcher*<br>
 [`emanuellzr01@outlook.com`](mailto:emanuellzr01@outlook.com)
 
 <br>
@@ -12,7 +12,7 @@
 
 *ARC Prize 2026 | ARC-AGI-2 · ARC-AGI-3 · Paper Track*
 
-[Abstract](#abstract) · [The Neural Core](#the-neural-core-dreamer--verifier) · [Low-Level Engineering](#low-level-engineering-the-kaggle-edge) · [Interactive Agency](#interactive-agency-arc-agi-3-strategy) · [Robustness & CI/CD](#robustness--cicd) · [Installation & Usage](#installation--usage) · [Paper Track Mapping](#theoretical-mapping)
+[Abstract](#abstract) · [The Neural Core](#the-neural-core-dreamer--verifier) · [Low-Level Engineering](#low-level-engineering) · [Multi-Process Orchestration](#multi-process-orchestration-ipc--swarm) · [Interactive Agency](#interactive-agency-arc-agi-3-strategy) · [Robustness & CI/CD](#robustness--cicd) · [Paper Track Mapping](#paper-track-mapping) · [Installation & Usage](#installation--usage) · [Citation](#citation)
 
 </div>
 
@@ -31,46 +31,54 @@ The architectural foundation of RADS is a decoupled generative-verificative loop
 The Dreamer is an 8-billion parameter **Masked Diffusion Language Model (MDLM)**. Unlike autoregressive transformers that generate tokens sequentially: an inductive bias that fails on 2D grids where $(r, c)$ depends on the global context, the MDLM treats grid synthesis as a denoising process over a continuous probability manifold.
 
 #### Continuous Token Algebra
-At diffusion timestep $t$, the output grid is represented as a sequence of soft probability vectors $\mathbf{p}_i^t \in \Delta^{|\mathcal{V}|}$ over the vocabulary $\mathcal{V}$ (where $|\mathcal{V}| = 16$ for ARC colors and control tokens). The model learns the reverse denoising transition $p_\theta(\mathbf{x}_{t-1} | \mathbf{x}_t)$:
+At diffusion timestep $`t`$, the output grid is represented as a sequence of soft probability vectors $`\mathbf{p}_i^t \in \Delta^{|\mathcal{V}|}`$ over the vocabulary $`\mathcal{V}`$ (where $`|\mathcal{V}| = 16`$ for ARC colors and control tokens). The model learns the reverse denoising transition $`p_\theta(\mathbf{x}_{t-1} | \mathbf{x}_t)`$:
 
-$$ \mathbf{p}_i^{t-1} = \frac{(1 - \alpha_{t-1}) \mathbf{e}_{\texttt{[MASK]}} + (\alpha_{t-1} - \alpha_t) f_\theta(\mathbf{p}_i^t, t)}{1 - \alpha_t} $$
+```math
+\mathbf{p}_i^{t-1} = \frac{(1 - \alpha_{t-1}) \mathbf{e}_{\texttt{[MASK]}} + (\alpha_{t-1} - \alpha_t) f_\theta(\mathbf{p}_i^t, t)}{1 - \alpha_t}
+```
 
-where $f_\theta$ is the model's prediction of the clean categorical distribution $\mathbf{x}_0$ given the noisy state $\mathbf{x}_t$, and $\alpha_t$ is the noise schedule (e.g., $\alpha_t = 1 - t/T$) representing the probability of a token being unmasked. The update rule utilizes **Continuous Token Algebra**: rather than sampling discrete tokens, the model projects the soft distributions into the embedding space via a weighted expectation:
+where $`f_\theta`$ is the model's prediction of the clean categorical distribution $`\mathbf{x}_0`$ given the noisy state $`\mathbf{x}_t`$, and $`\alpha_t`$ is the noise schedule (e.g., $`\alpha_t = 1 - t/T`$) representing the probability of a token being unmasked. The update rule utilizes **Continuous Token Algebra**: rather than sampling discrete tokens, the model projects the soft distributions into the embedding space via a weighted expectation:
 
-$$ \mathbf{e}_i^t = \sum_{j \in \mathcal{V}} p_{i,j}^t \cdot \mathbf{W}_j $$
+```math
+\mathbf{e}_i^t = \sum_{j \in \mathcal{V}} p_{i,j}^t \cdot \mathbf{W}_j
+```
 
-where $\mathbf{W}_j$ is the $j$-th entry of the frozen base embedding table. This allows the model to maintain and refine uncertainty over multiple denoising steps. The attention mechanism is **bidirectional and uncausal** at every step, ensuring that every cell's distribution is informed by the entire grid layout, which is the correct computational structure for rule-governed transformations with long-range spatial dependencies.
+where $`\mathbf{W}_j`$ is the $`j`$-th entry of the frozen base embedding table. This allows the model to maintain and refine uncertainty over multiple denoising steps. The attention mechanism is **bidirectional and uncausal** at every step, ensuring that every cell's distribution is informed by the entire grid layout, which is the correct computational structure for rule-governed transformations with long-range spatial dependencies.
 
 #### Test-Time Training (TTT)
 When a novel task is encountered, RADS executes a task-specific adaptation phase. Using the RE-ARC procedural generator, it synthesizes hundreds of augmented variants of the demonstration pairs. It then performs approximately 150 gradient steps on a Rank-32 LoRA adapter, optimizing the cross-entropy loss between the predicted soft distributions and the ground-truth demonstrations. This shifts the model's prior from a general grid-reasoning configuration to one specifically calibrated for the task's unique rule structure.
 
 ### 2. The Thermodynamic Verifier (TRM)
 
-The **Tiny Recursive Model (TRM)** is a 7-million parameter network that acts as a mathematical consistency check. Given a candidate hypothesis $h$ produced by the Dreamer, the TRM determines if it is logically self-consistent with the demonstrations without requiring a ground-truth label.
+The **Tiny Recursive Model (TRM)** is a 7-million parameter network that acts as a mathematical consistency check. Given a candidate hypothesis $`h`$ produced by the Dreamer, the TRM determines if it is logically self-consistent with the demonstrations without requiring a ground-truth label.
 
 #### Banach Contraction Mapping
-The TRM implements a shared two-layer transformer block $f_\phi$ applied recursively over a latent state $\mathbf{z} \in \mathbb{R}^{d_z}$:
+The TRM implements a shared two-layer transformer block $`f_\phi`$ applied recursively over a latent state $`\mathbf{z} \in \mathbb{R}^{d_z}`$:
 
-$$ \mathbf{z}^{(k+1)} = f_\phi\!\left(\mathbf{z}^{(k)},\; h\right), \qquad \mathbf{z}^{(0)} = \text{Enc}(h) $$
+```math
+\mathbf{z}^{(k+1)} = f_\phi\!\left(\mathbf{z}^{(k)},\; h\right), \qquad \mathbf{z}^{(0)} = \text{Enc}(h)
+```
 
-The network is trained to behave as a **conditional contraction mapping** grounded in the **Banach Fixed-Point Theorem**. A self-mapping $f$ on a complete metric space has a unique fixed point if it is a contraction. The TRM is trained such that:
+The network is trained to behave as a **conditional contraction mapping** grounded in the **Banach Fixed-Point Theorem**. A self-mapping $`f`$ on a complete metric space has a unique fixed point if it is a contraction. The TRM is trained such that:
 
-1.  **Consistency $\implies$ Convergence:** If $h$ is logically consistent with the demonstrations, the recursive application of $f_\phi$ converges to a stable fixed point: a low-energy manifold in latent space known as an **Aizawa attractor**.
-2.  **Inconsistency $\implies$ Divergence:** If $h$ contains a logical contradiction, the iteration fails to reach an attractor and exhibits chaotic divergence.
+1.  **Consistency $`\implies`$ Convergence:** If $h$ is logically consistent with the demonstrations, the recursive application of $`f_\phi`$ converges to a stable fixed point: a low-energy manifold in latent space known as an **Aizawa attractor**.
+2.  **Inconsistency $`\implies`$ Divergence:** If $h$ contains a logical contradiction, the iteration fails to reach an attractor and exhibits chaotic divergence.
 
-The binary acceptance verdict is determined by the fixed-point threshold $\varepsilon$:
+The binary acceptance verdict is determined by the fixed-point threshold $`\varepsilon`$:
 
-$$ \text{TRM\_VERDICT}(h) = \begin{cases} \texttt{ACCEPT} & \text{if } \|\mathbf{z}^{(K_\text{max})} - \mathbf{z}^{(K_\text{max}-1)}\|_2 < \varepsilon \\ \texttt{REJECT} & \text{otherwise} \end{cases} $$
+```math
+\text{TRM\_VERDICT}(h) = \begin{cases} \texttt{ACCEPT} & \text{if } \|\mathbf{z}^{(K_\text{max})} - \mathbf{z}^{(K_\text{max}-1)}\|_2 < \varepsilon \\ \texttt{REJECT} & \text{otherwise} \end{cases}
+```
 
 Because the TRM is captured as a **CUDA Graph**, it can screen over 300 candidates per second, providing an elite quality-control mechanism that prevents the system from submitting confident-but-wrong diffusion hallucinations.
 
 ## Low-Level Engineering
 
-Deploying an 8-billion parameter diffusion model and an asynchronous swarm of MCTS workers within the strict 15 GB VRAM and 29 GB RAM limit of a Kaggle notebook requires aggressive, low-level systems engineering.
+Deploying an 8-billion parameter diffusion model and an asynchronous swarm of MCTS workers within the strict 15 GB VRAM and 30 GB RAM limit of a Kaggle notebook requires aggressive, low-level systems engineering.
 
 ### 1. Sequence Packing & NestedTensors
 
-Standard attention implementations scale quadratically with the maximum sequence length in a batch. Padding a $3 \times 3$ ARC grid (9 tokens) to the $64 \times 64$ maximum (4,096 tokens) results in a $207{,}000\times$ waste of attention FLOPs. On a single NVIDIA T4, this overhead makes the 12-hour competition budget effectively unreachable.
+Standard attention implementations scale quadratically with the maximum sequence length in a batch. Padding a $`3 \times 3`$ ARC grid (9 tokens) to the $`64 \times 64`$ maximum (4,096 tokens) results in a $`207{,}000\times`$ waste of attention FLOPs. On a single NVIDIA T4, this overhead makes the 12-hour competition budget effectively unreachable.
 
 RADS eliminates padding entirely using **Grid Sequence Packing**. Utilizing PyTorch's `NestedTensor` abstraction, variable-length grids are concatenated into a single contiguous 1D buffer. Sequence boundaries are tracked via a cumulative sequence length array (`cu_seq_lens`). By integrating with the **xFormers** memory-efficient attention kernel (`sdpa_mem_eff`), the system skips all cross-sequence interactions and zero-valued padding computations.
 
@@ -85,14 +93,17 @@ Measured throughput improvement: **3×–8×** across the ARC-AGI-2 task distrib
 
 ### 2. Fused 2D Rotary Positional Encodings (RoPE)
 
-Standard 1D RoPE conflates spatial relationships on 2D grids. A token at index 35 in a $7 \times 5$ grid occupies an entirely different geometric role than one at index 35 in a $5 \times 7$ grid. RADS solves this via **Unsloth's Fused 2D RoPE**, which factorizes the rotary embedding into independent axial components.
+Standard 1D RoPE conflates spatial relationships on 2D grids. A token at index 35 in a $`7 \times 5`$ grid occupies an entirely different geometric role than one at index 35 in a $`5 \times 7`$ grid. RADS solves this via **Unsloth's Fused 2D RoPE**, which factorizes the rotary embedding into independent axial components.
 
-The rotation matrix for a token at grid coordinates $(r, c)$ is constructed as a **block-diagonal axial factorization**:
+The rotation matrix for a token at grid coordinates $`(r, c)`$ is constructed as a **block-diagonal axial factorization**:
 
-$$ \mathbf{R}_{r,c} = \text{diag}(\mathbf{R}_r^{\text{row}}, \mathbf{R}_c^{\text{col}}) $$
+```math
+\mathbf{R}_{r,c} = \text{diag}(\mathbf{R}_r^{\text{row}}, \mathbf{R}_c^{\text{col}})
+```
 
-where $\mathbf{R}_r^{\text{row}}$ is applied to the first half of the attention head dimensions based on the vertical index $r$, and $\mathbf{R}_c^{\text{col}}$ is applied to the second half based on the horizontal index $c$. Each component follows the standard RoPE formulation with independent base frequencies $\theta_\text{row}$ and $\theta_\text{col}$. 
- The inner product between two positional embeddings now decays as a function of their **2D Euclidean distance**, providing the model with a structurally correct spatial prior. By fusing this rotation directly into the CUDA attention kernel, RADS avoids the HBM round-trips required by separate preprocessing passes.
+where $`\mathbf{R}_r^{\text{row}}`$ is applied to the first half of the attention head dimensions based on the vertical index $`r`$, and $`\mathbf{R}_c^{\text{col}}`$ is applied to the second half based on the horizontal index $`c`$. Each component follows the standard RoPE formulation with independent base frequencies $`\theta_\text{row}`$ and $`\theta_\text{col}`$.
+
+The inner product between two positional embeddings now decays as a function of their **2D Euclidean distance**, providing the model with a structurally correct spatial prior. By fusing this rotation directly into the CUDA attention kernel, RADS avoids the HBM round-trips required by separate preprocessing passes.
 
 ### 3. Copy-on-Write (CoW) Leak Prevention
 
@@ -120,7 +131,7 @@ The server implements **Dynamic Batching**: it polls the inter-process request q
 
 Communication between the CPU MCTS workers and the GPU server is handled via **POSIX Shared Memory (`shm`)**, eliminating the massive overhead of serializing/deserializing large tensors through Python's default `multiprocessing.Queue`.
 
--   **State Buffer:** A pre-allocated shared-memory segment containing $N=256$ slots. Each slot stores a serialized `float32` representation of an ARC game state.
+-   **State Buffer:** A pre-allocated shared-memory segment containing $`N=256`$ slots. Each slot stores a serialized `float32` representation of an ARC game state.
 -   **Score Buffer:** A corresponding segment where the GPU server writes the evaluated stability scores.
 -   **Slot Orchestration:** Workers checkout a slot ID from a thread-safe `available_slots` queue, write the state directly to the memory-mapped buffer, and push the (worker_id, slot_id) pair to the request queue.
 
@@ -152,9 +163,9 @@ To bootstrap the world-model generation, the agent executes a **Minimum Viable P
 
 The transition from Epistemic Foraging to Pragmatic Execution is governed by the **Homogeneous Pragmatic Consensus (HPC)** criterion. The agent maintains a beam of active world-model hypotheses $\mathcal{B}$. It stops exploration only when:
 
-1.  **Entropy Collapse:** Every surviving model in the beam predicts the exact same optimal winning sequence: $H\!\left(\{a_1^{(i)}, \dots, a_m^{(i)}\}_{i \in \mathcal{B}}\right) = 0$.
+1.  **Entropy Collapse:** Every surviving model in the beam predicts the exact same optimal winning sequence: $`H\!\left(\{a_1^{(i)}, \dots, a_m^{(i)}\}_{i \in \mathcal{B}}\right) = 0`$
 2.  **Attractor Consensus:** The TRM fixed points for all surviving hypotheses have converged to the same mathematical attractor:
-    $$ \max_{i,j \in \mathcal{B}} \|\mathbf{z}_i^* - \mathbf{z}_j^*\|_2 < \delta $$
+    $`\max_{i,j \in \mathcal{B}} \|\mathbf{z}_i^* - \mathbf{z}_j^*\|_2 < \delta`$
 
 Once HPC is met, the agent commits to the winning path. If HPC is not met, the agent chooses the physical action that maximizes **Expected Information Gain (EIG)**: the action that most aggressively shatters the remaining hypothesis beam.
 
@@ -162,7 +173,7 @@ Once HPC is met, the agent commits to the winning path. If HPC is not met, the a
 
 The RHAE human baseline is established using first-time players who often panic and reset after triggering unknown hazards. RADS treats `RESET` as a deliberate **epistemic instrument**. When facing suspected traps, the agent intentionally walks into them to observe the `GAME_OVER` transition, mapping the hazard perfectly, and then triggers `ACTION_RESET`. 
 
-Because first-time humans also trigger hazards, the inflated human baseline denominator absorbs this cost. By capping the reset budget at $B_\text{RESET} = 3$, RADS ensures that hazard mapping is completed for a near-zero RHAE penalty, transforming a failure state into a source of ground-truth evidence for the world model.
+Because first-time humans also trigger hazards, the inflated human baseline denominator absorbs this cost. By capping the reset budget at $`B_\text{RESET} = 3`$, RADS ensures that hazard mapping is completed for a near-zero RHAE penalty, transforming a failure state into a source of ground-truth evidence for the world model.
 
 ## Robustness & CI/CD
 
