@@ -48,11 +48,6 @@ graph TD
         Verifier --> Validated
         Validated --> Submission
     end
-
-    style Task fill:#f9f,stroke:#333,stroke-width:2px
-    style Submission fill:#ccf,stroke:#333,stroke-width:2px
-    style Dreamer fill:#bbf,stroke:#333,stroke-width:2px
-    style Verifier fill:#bfb,stroke:#333,stroke-width:2px
 ```
 
 ## The Neural Core (Dreamer & Verifier)
@@ -162,13 +157,6 @@ graph TD
             CoW --> Init[Worker-Init Seeding]
         end
     end
-
-    style NP fill:#fbb,stroke:#333
-    style Fork fill:#fbb,stroke:#333
-    style RoPE1D fill:#fbb,stroke:#333
-    style NT fill:#bfb,stroke:#333
-    style Axial fill:#bfb,stroke:#333
-    style Pure fill:#bfb,stroke:#333
 ```
 
 ### 1. Sequence Packing & NestedTensors
